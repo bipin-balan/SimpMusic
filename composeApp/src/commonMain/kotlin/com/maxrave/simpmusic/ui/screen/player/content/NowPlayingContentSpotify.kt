@@ -112,6 +112,8 @@ import com.maxrave.domain.mediaservice.handler.RepeatState
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.MediaPlayerView
 import com.maxrave.simpmusic.expect.ui.MediaPlayerViewWithSubtitle
+import com.maxrave.simpmusic.expect.ui.PlatformCastButton
+import com.maxrave.simpmusic.expect.ui.PlatformRemoteDeviceButton
 import com.maxrave.simpmusic.expect.ui.toImageBitmap
 import com.maxrave.simpmusic.extension.LeftToRight
 import com.maxrave.simpmusic.extension.elapsedLabel
@@ -1063,6 +1065,33 @@ fun NowPlayingContentSpotify(
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                             ) {
+                                                Icon(imageVector = SimpIcons.Info, tint = Color.White, contentDescription = "")
+                                            }
+                                            // Cyan rather than colorScheme.primary: this screen is force-dark whatever
+                                            // the app theme is, so a light-theme primary would sink into the black
+                                            // backdrop. Mirrors the `if (forceDark) Color.Cyan` rule in FullWidthItems.
+                                            PlatformCastButton(
+                                                modifier = Modifier.size(24.dp),
+                                                tint = if (state.castState.isRemote) Color.Cyan else Color.White,
+                                            )
+                                            // HEOS (Denon / Marantz) device picker — same active tint as Cast,
+                                            // since both drive the same castState.
+                                            PlatformRemoteDeviceButton(
+                                                modifier = Modifier.size(24.dp),
+                                                tint = if (state.castState.isRemote) Color.Cyan else Color.White,
+                                            )
+                                            AnimatedVisibility(visible = state.castState.isRemote) {
+                                                Text(
+                                                    text =
+                                                        stringResource(
+                                                            Res.string.playing_on_device,
+                                                            state.castState.deviceName ?: "Cast",
+                                                        ),
+                                                    style = typo().bodySmall,
+                                                    color = Color.Cyan,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
                                                 IconButton(
                                                     modifier =
                                                         Modifier
