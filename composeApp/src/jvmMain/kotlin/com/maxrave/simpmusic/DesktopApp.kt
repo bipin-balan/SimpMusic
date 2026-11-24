@@ -2,7 +2,6 @@ package com.maxrave.simpmusic
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -12,15 +11,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.application
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.rememberWindowState
 import coil3.ImageLoader
+import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.LocalPlatformContext
+import coil3.compose.preferEndFirstIntrinsicSize
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.disk.DiskCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
@@ -32,26 +35,36 @@ import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
 import com.maxrave.domain.mediaservice.handler.ToastType
 import com.maxrave.domain.notification.DesktopNotificationManager
+import com.maxrave.domain.repository.LibrarySyncHostRepository
+import com.maxrave.data.io.getHomeFolderPath
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.di.viewModelModule
-import com.maxrave.simpmusic.extension.DesktopWindowChrome
-import com.maxrave.simpmusic.ui.component.CustomTitleBar
+import com.maxrave.simpmusic.expect.DesktopFullscreen
+import com.maxrave.simpmusic.expect.ui.LibrarySyncLoginPrompt
+import com.maxrave.simpmusic.ui.component.MacAppearance
 import com.maxrave.simpmusic.ui.mini_player.MiniPlayerManager
 import com.maxrave.simpmusic.ui.mini_player.MiniPlayerWindow
 import com.maxrave.simpmusic.ui.theme.isDarkTheme
 import com.maxrave.simpmusic.utils.ComposeResUtils
+import com.maxrave.simpmusic.utils.NetworkFirstInterceptor
 import com.maxrave.simpmusic.utils.VersionManager
 import com.maxrave.simpmusic.viewModel.SharedViewModel
 import com.maxrave.simpmusic.viewModel.changeLanguageNative
 import dev.nucleusframework.composenativetray.tray.api.Tray
 import dev.nucleusframework.core.runtime.SingleInstanceManager
+import io.sentry.ScopeType
 import io.sentry.Sentry
 import io.sentry.SentryLevel
+import io.sentry.protocol.OperatingSystem
 import io.sentry.protocol.User
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import multiplatform.network.cmptoast.ToastHost
 import multiplatform.network.cmptoast.showToast
@@ -64,6 +77,7 @@ import org.koin.core.context.loadKoinModules
 import org.koin.core.context.startKoin
 import org.koin.java.KoinJavaComponent.inject
 import org.koin.mp.KoinPlatform.getKoin
+import org.simpmusic.discord.configDiscord
 import org.simpmusic.lastfm.configLastfm
 import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.app_name
@@ -92,7 +106,7 @@ private const val SENTRY_APP_OPEN = "app.open"
  */
 private val DEEP_LINK_ARG = Regex("^[A-Za-z][A-Za-z0-9+.\\-]*://.+")
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalCoilApi::class)
 fun runDesktopApp(args: Array<String> = emptyArray()) {
     // Install crash dialog handler first — catches all uncaught exceptions
     CrashDialog.install()
@@ -123,17 +137,11 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
     System.setProperty("compose.interop.blending", "true")
     System.setProperty("compose.layers.type", "COMPONENT")
 
-    // Skiko's vsync wait can park the EDT forever after a display change:
-    // macOS waits on a CVDisplayLink-signalled NSConditionLock with no timeout
-    // (DisplayLinkThrottler.mm), Linux blocks inside the vsync'd glXSwapBuffers
-    // when X11 loses its sync source (CMP-9725 / CMP-10019). Both surface as
-    // "UI frozen, audio keeps playing" when the window moves to another
-    // monitor. With vsync off, skiko paces frames with its refresh-rate frame
-    // limiter (skiko.vsync.framelimit.fallback, on by default) instead.
-    // Windows renders via DirectX and shows no such freeze — leave it alone.
-    if (!System.getProperty("os.name", "").contains("Windows", ignoreCase = true)) {
-        System.setProperty("skiko.vsync.enabled", "false")
-    }
+    // Vsync stays at skiko's default (on) everywhere: it is skiko's only frame cap. It used to be
+    // forced off on macOS and Linux against a feared freeze on display changes (CMP-9725 /
+    // CMP-10019); with it off skiko drew every frame asked for at once, measured at 300–700 fps on
+    // 60/75 Hz monitors and ~300 fps minimized. On Linux, dragging the window between a 60 Hz and a
+    // 75 Hz monitor with vsync on did not freeze.
 
     // Handle deep link URIs
     // macOS: receives URI via Desktop open URI handler (app already running or launched via scheme)
@@ -182,11 +190,16 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
         deepLinkArg?.let { DesktopDeepLinkHandler.writePendingUri(it) }
         return
     }
+    // Past the guard on purpose: a second instance must not open the same log files.
+    Logger.enableFileLogging(getHomeFolderPath(listOf(".simpmusic", "logs")))
 
     // First instance only: deliver our own deep link (non-macOS passes URI via args).
     if (!isMacOS) {
         deepLinkArg?.let { DesktopDeepLinkHandler.onNewUri(it) }
     }
+
+    // Before Koin: DiscordRepository is created at start and reads which login this build uses.
+    configDiscord(BuildKonfig.discordClientId)
 
     // Initialize Koin ONCE before application starts
     startKoin {
@@ -195,6 +208,8 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                 applicationId = "com.maxrave.simpmusic",
                 versionName = BuildKonfig.versionName,
                 platform = "${System.getProperty("os.name")} ${System.getProperty("os.version")}",
+                // Set by desktopApp's JavaExec tasks (run, hotRunJvm); a packaged install never has it.
+                isDevBuild = System.getProperty("simpmusic.dev") == "true",
             ),
         )
         loadKoinModules(viewModelModule)
@@ -222,6 +237,9 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
             options.isSendDefaultPii = true
             options.setTracesSampler { context -> if (context.transactionContext.name == SENTRY_APP_OPEN) 1.0 else 0.0 }
         }
+        // sentry-java fills in no OS context on the JVM (only sentry-android does). The global scope reaches
+        // every event and the app.open transaction, on every thread.
+        Sentry.configureScope(ScopeType.GLOBAL) { it.contexts.setOperatingSystem(desktopOs()) }
         if (installationId != null) Sentry.setUser(User().apply { id = installationId })
         Sentry.startSession()
         Sentry.startTransaction(SENTRY_APP_OPEN, SENTRY_APP_OPEN).finish()
@@ -257,6 +275,9 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
     val desktopNotificationManager = getKoin().get<DesktopNotificationManager>()
     desktopNotificationManager.initialize()
 
+    // Library sync (#2663): reopens the server for paired phones. Off the startup path: it binds a port.
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { getKoin().get<LibrarySyncHostRepository>().start() }
+
     val sharedViewModel = getKoin().get<SharedViewModel>()
     if (sharedViewModel.shouldCheckForUpdate()) {
         sharedViewModel.checkForUpdate()
@@ -267,7 +288,7 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
         sharedViewModel.setIntent(intent)
     }
 
-    application {
+    governedApplication {
         // Main Window
         val windowState =
             rememberWindowState(
@@ -340,82 +361,55 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                 exitApplication()
             }
         }
-        // Detect virtual machines (Parallels, VirtualBox, VMware, etc.).
-        // Transparent + undecorated Compose windows don't render on VM
-        // GPU drivers — the window stays invisible while the JVM keeps
-        // running, so we must detect the VM and fall back to a normal
-        // decorated window.
-        //
-        // We probe Manufacturer + Model because brand strings live in
-        // different fields per hypervisor (Parallels-on-ARM puts
-        // "Parallels Software International Inc." in Manufacturer and
-        // "Parallels ARM Virtual Machine" in Model; VirtualBox uses
-        // "innotek GmbH" + "VirtualBox"; etc).
-        //
-        // Microsoft removed `wmic` from Windows 11 (deprecated since
-        // 10 21H1), so on modern Windows it returns "command not
-        // recognized" and our previous detection always saw an empty
-        // vendor — Parallels Win 11 ARM users hit this and got an
-        // invisible window. PowerShell `Get-CimInstance` is the modern
-        // replacement; we try it first and fall back to wmic for older
-        // hosts.
-        val isVM =
-            remember {
-                val osName = System.getProperty("os.name", "")
-                // Linux takes the VM branch too: undecorated + transparent breaks on some
-                // distros/WMs, so like Spotify it keeps the native title bar there.
-                if (osName.contains("Linux", ignoreCase = true)) {
-                    return@remember true
-                }
-                if (!osName.contains("Windows", ignoreCase = true)) {
-                    return@remember false
-                }
-                val probes =
-                    listOf(
-                        listOf(
-                            "powershell",
-                            "-NoProfile",
-                            "-Command",
-                            "(Get-CimInstance Win32_ComputerSystem | " +
-                                "Select-Object Manufacturer,Model | " +
-                                "Format-List | Out-String).Trim()",
-                        ),
-                        listOf("wmic", "computersystem", "get", "manufacturer,model"),
-                    )
-                val sysInfo =
-                    probes
-                        .asSequence()
-                        .mapNotNull { cmd ->
-                            runCatching {
-                                val p =
-                                    ProcessBuilder(cmd)
-                                        .redirectErrorStream(true)
-                                        .start()
-                                val out = p.inputStream.bufferedReader().readText()
-                                if (p.waitFor() == 0 && out.isNotBlank()) out else null
-                            }.getOrNull()
-                        }.firstOrNull()
-                        .orEmpty()
-                val vmTokens = listOf("Parallels", "VirtualBox", "VMware", "QEMU", "KVM", "Xen", "Hyper-V")
-                vmTokens.any { sysInfo.contains(it, ignoreCase = true) } ||
-                    System.getProperty("compose.window.no-transparent", "false").toBooleanStrictOrNull() == true
-            }
-        // Publish whether the custom title bar will be mounted so getScreenSizeInfo() can
-        // subtract the 40dp strip it occupies above the content (see DesktopWindowChrome).
-        LaunchedEffect(isVM) {
-            DesktopWindowChrome.customTitleBarVisible = !isVM
-        }
+        // Every OS keeps its own title bar. On macOS it takes the app's theme below.
         Window(
             onCloseRequest = {
                 isVisible = false
             },
             title = stringResource(Res.string.app_name),
             icon = painterResource(Res.drawable.circle_app_icon),
-            undecorated = !isVM,
-            transparent = !isVM,
             state = windowState,
             visible = isVisible,
+            // F11 toggles full screen; Esc leaves it, and only then is the key taken.
+            onPreviewKeyEvent = { event ->
+                when {
+                    event.type != KeyEventType.KeyDown -> false
+                    event.key == Key.F11 -> {
+                        DesktopFullscreen.toggle()
+                        true
+                    }
+                    event.key == Key.Escape && DesktopFullscreen.isFullscreen -> {
+                        DesktopFullscreen.toggle()
+                        true
+                    }
+                    else -> false
+                }
+            },
         ) {
+            LaunchedEffect(window) {
+                DesktopFullscreen.attach(windowState)
+            }
+            // macOS: AWT starts the app in light Aqua, so the system title bar is white whatever
+            // the theme. The appearance gives the title and AppKit dialogs the theme's colours; a
+            // transparent title bar over the window background gives the bar the same black or
+            // white the window paints behind the panels.
+            if (isMacOS) {
+                // Resolved inside the window, where isSystemInDarkTheme() has the system theme.
+                val themeMode by sharedViewModel
+                    .getThemeMode()
+                    .collectAsState(DataStoreManager.THEME_MODE_DARK)
+                val isDark = isDarkTheme(themeMode)
+                LaunchedEffect(window) {
+                    window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
+                }
+                LaunchedEffect(window, isDark) {
+                    MacAppearance.set(isDark)
+                    window.background = if (isDark) java.awt.Color.BLACK else java.awt.Color.WHITE
+                }
+            }
+            LaunchedEffect(windowState.placement) {
+                if (windowState.placement == WindowPlacement.Floating) DesktopFullscreen.restoreMaximized()
+            }
             // Returning from macOS System Settings is the only reliable time to learn whether the
             // user enabled notifications after denying the one-shot system prompt.
             DisposableEffect(window) {
@@ -483,60 +477,36 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                     }
                 }
             }
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (!isVM) {
-                                Modifier.clip(RoundedCornerShape(12.dp))
-                            } else {
-                                Modifier
-                            },
-                        ),
-            ) {
-                if (!isVM) {
-                    // The bar sits outside AppTheme, so the colours are resolved here from the
-                    // same stored setting AppTheme uses and handed down. Pure black / pure white
-                    // to match the window colour the shell paints behind the panels.
-                    val themeMode by sharedViewModel
-                        .getThemeMode()
-                        .collectAsState(DataStoreManager.THEME_MODE_DARK)
-                    val isDark = isDarkTheme(themeMode)
-                    CustomTitleBar(
-                        title = stringResource(Res.string.app_name),
-                        windowState = windowState,
-                        window = window,
-                        onCloseRequest = {
-                            isVisible = false
-                        },
-                        containerColor = if (isDark) Color.Black else Color.White,
-                        titleColor = if (isDark) Color.White else Color.Black,
-                    )
-                }
-
+            Column(modifier = Modifier.fillMaxSize()) {
                 val context = LocalPlatformContext.current
                 setSingletonImageLoaderFactory {
-                    ImageLoader
-                        .Builder(context)
-                        .components {
-                            add(
-                                OkHttpNetworkFetcherFactory(
-                                    callFactory = {
-                                        OkHttpClient()
-                                    },
-                                ),
-                            )
-                        }.diskCachePolicy(CachePolicy.ENABLED)
-                        .networkCachePolicy(CachePolicy.ENABLED)
-                        .diskCache(
-                            DiskCache
-                                .Builder()
-                                .directory(FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "image_cache")
-                                .maxSizeBytes(512L * 1024 * 1024)
-                                .build(),
-                        ).crossfade(true)
-                        .build()
+                    lateinit var imageLoader: ImageLoader
+                    imageLoader =
+                        ImageLoader
+                            .Builder(context)
+                            .components {
+                                add(NetworkFirstInterceptor { imageLoader })
+                                add(
+                                    OkHttpNetworkFetcherFactory(
+                                        callFactory = {
+                                            OkHttpClient()
+                                        },
+                                    ),
+                                )
+                            }.diskCachePolicy(CachePolicy.ENABLED)
+                            .networkCachePolicy(CachePolicy.ENABLED)
+                            .diskCache(
+                                DiskCache
+                                    .Builder()
+                                    .directory(FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "image_cache")
+                                    .maxSizeBytes(512L * 1024 * 1024)
+                                    .build(),
+                            ).crossfade(true)
+                            // CrossfadePainter otherwise sizes itself as max(placeholder, image) once and keeps it,
+                            // so a square holder over a wide banner leaves the banner zoomed after the fade.
+                            .preferEndFirstIntrinsicSize(true)
+                            .build()
+                    imageLoader
                 }
                 App(
                     showDesktopNotificationPermissionDialog = showNotificationPermissionDialog,
@@ -544,7 +514,10 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
                         desktopNotificationManager::dismissPermissionDialog,
                     onOpenDesktopNotificationSettings =
                         desktopNotificationManager::openNotificationSettings,
+                    // macOS only; full screen hides the title bar, so the panels get their gap back.
+                    desktopPanelTop = if (isMacOS && !DesktopFullscreen.isFullscreen) 0.dp else 8.dp,
                 )
+                LibrarySyncLoginPrompt(sharedViewModel)
                 ToastHost()
             }
         }
@@ -608,6 +581,61 @@ private fun machineId(): String? {
         }.getOrNull()
     if (raw.isNullOrBlank()) return null
     return MessageDigest.getInstance("SHA-256").digest(raw.toByteArray()).joinToString("") { "%02x".format(it) }
+}
+
+/**
+ * The OS as Sentry shows it ("Windows 11 24H2", "macOS 27.0.1", "Ubuntu 24.04"). Name and version are set
+ * explicitly, so Sentry does not guess from a raw description — its Windows table stops at build 22999.
+ * Falls back to the JDK's own values when anything fails. Blocking (runs `reg` on Windows).
+ */
+private fun desktopOs(): OperatingSystem {
+    val osName = System.getProperty("os.name").orEmpty()
+    val osVersion = System.getProperty("os.version")
+    return runCatching {
+        OperatingSystem().apply {
+            when {
+                osName.startsWith("Windows") -> {
+                    // The JDK's os.version is "10.0" on both Windows 10 and 11; the build lives in the registry.
+                    val reg = runCommand("reg", "query", "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "/reg:64")
+
+                    fun value(key: String) = Regex("^\\s+$key\\s+REG_\\w+\\s+(\\S+)", RegexOption.MULTILINE).find(reg)?.groupValues?.get(1)
+                    val ubr = value("UBR")?.removePrefix("0x")?.toIntOrNull(16)
+                    name = "Windows"
+                    // ReleaseId is what Windows 10 had before DisplayVersion arrived in 20H2.
+                    version = listOfNotNull(osName.removePrefix("Windows "), value("DisplayVersion") ?: value("ReleaseId")).joinToString(" ")
+                    build = value("CurrentBuild")?.let { if (ubr != null) "$it.$ubr" else it }
+                }
+
+                osName.startsWith("Mac") -> {
+                    // Not os.version: JDKs without JDK-8359830 (the bundled runtime is 21.0.2) report macOS 26 as
+                    // "16.0". The hidden link is the file that fix reads, unaffected by SYSTEM_VERSION_COMPAT.
+                    val plist = File("/System/Library/CoreServices/.SystemVersionPlatform.plist").readText()
+
+                    fun value(key: String) = Regex("<key>$key</key>\\s*<string>([^<]+)</string>").find(plist)?.groupValues?.get(1)
+                    name = "macOS"
+                    version = value("ProductVersion")
+                    build = value("ProductBuildVersion")
+                }
+
+                else -> {
+                    // os-release(5): /etc/os-release wins, /usr/lib/os-release is the fallback.
+                    val release =
+                        listOf("/etc/os-release", "/usr/lib/os-release")
+                            .firstNotNullOfOrNull { path -> File(path).takeIf { it.canRead() }?.readLines() }
+                            .orEmpty()
+                            .associate { it.substringBefore('=') to it.substringAfter('=').trim('"', '\'') }
+                    name = release["NAME"] ?: osName
+                    version = release["VERSION_ID"]
+                    kernelVersion = osVersion
+                }
+            }
+        }
+    }.getOrElse {
+        OperatingSystem().apply {
+            name = osName
+            version = osVersion
+        }
+    }
 }
 
 // Skiko draws into a heavyweight java.awt.Canvas nested somewhere under the content pane.

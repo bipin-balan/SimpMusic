@@ -12,7 +12,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -33,7 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -76,7 +75,9 @@ import com.maxrave.domain.data.type.ArtistType
 import com.maxrave.domain.data.type.PlaylistType
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.utils.connectArtists
+import com.maxrave.domain.utils.isLive
 import com.maxrave.domain.utils.toListName
+import com.maxrave.simpmusic.extension.titleMarquee
 import com.maxrave.simpmusic.ui.icon.Add
 import com.maxrave.simpmusic.ui.icon.Check
 import com.maxrave.simpmusic.ui.icon.DownloadForOffline
@@ -85,10 +86,11 @@ import com.maxrave.simpmusic.ui.icon.MoreVert
 import com.maxrave.simpmusic.ui.icon.PushPin
 import com.maxrave.simpmusic.ui.icon.QueueMusic
 import com.maxrave.simpmusic.ui.icon.SimpIcons
+import com.maxrave.simpmusic.ui.icon.SkipNext
+import com.maxrave.simpmusic.ui.theme.ArtworkShape
 import com.maxrave.simpmusic.ui.theme.LocalForceDarkText
 import com.maxrave.simpmusic.ui.theme.seed
 import com.maxrave.simpmusic.ui.theme.typo
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -97,6 +99,7 @@ import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.add_to_queue
 import simpmusic.composeapp.generated.resources.album
 import simpmusic.composeapp.generated.resources.artists
+import simpmusic.composeapp.generated.resources.play_next
 import simpmusic.composeapp.generated.resources.playlist
 import simpmusic.composeapp.generated.resources.podcasts
 import simpmusic.composeapp.generated.resources.radio
@@ -135,10 +138,13 @@ fun SongFullWidthItems(
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     val songRepository: SongRepository = koinInject<SongRepository>()
-    val downloadState by songRepository
+    val storedSong by songRepository
         .getSongAsFlow(songEntity?.videoId ?: track?.videoId ?: "")
-        .mapNotNull { it?.downloadState }
-        .collectAsState(initial = DownloadState.STATE_NOT_DOWNLOADED)
+        .collectAsState(initial = null)
+    val downloadState = storedSong?.downloadState ?: DownloadState.STATE_NOT_DOWNLOADED
+    // The list's own model says what its source said; the stored row adds what playback learned
+    // since, which is the only way a queue row is marked — the queue response shows no LIVE chip.
+    val isLive = track?.isLive == true || songEntity?.isLive == true || storedSong?.isLive == true
     val offsetX = remember { Animatable(initialValue = 0f) }
     var heightDp by remember { mutableStateOf(0.dp) }
 
@@ -150,6 +156,9 @@ fun SongFullWidthItems(
             offsetX.value >= maxOffset / 2,
         ) { shouldShowAddToQueue ->
             if (shouldShowAddToQueue) {
+                // Where Add to queue is blocked the swipe plays the song next instead
+                // (SharedViewModel.addListToQueue), so the icon shows what will happen.
+                val playsNext = rememberAddToQueueBlock() != null
                 Box(
                     modifier =
                         Modifier
@@ -161,8 +170,9 @@ fun SongFullWidthItems(
                 ) {
                     Icon(
                         tint = contentColor,
-                        imageVector = SimpIcons.QueueMusic,
-                        contentDescription = stringResource(Res.string.add_to_queue),
+                        imageVector = if (playsNext) SimpIcons.SkipNext else SimpIcons.QueueMusic,
+                        contentDescription =
+                            stringResource(if (playsNext) Res.string.play_next else Res.string.add_to_queue),
                     )
                 }
             }
@@ -287,7 +297,7 @@ fun SongFullWidthItems(
                                 modifier =
                                     Modifier
                                         .fillMaxSize()
-                                        .clip(RoundedCornerShape(4.dp)),
+                                        .clip(ArtworkShape),
                             )
                         } else {
                             Text(
@@ -315,7 +325,7 @@ fun SongFullWidthItems(
                             Modifier
                                 .fillMaxWidth()
                                 .wrapContentHeight(align = Alignment.CenterVertically)
-                                .basicMarquee(
+                                .titleMarquee(
                                     iterations = Int.MAX_VALUE,
                                     animationMode = MarqueeAnimationMode.Immediately,
                                 ).focusable(),
@@ -351,6 +361,8 @@ fun SongFullWidthItems(
                                 Spacer(modifier = Modifier.width(5.dp))
                             }
                         }
+                        // Ahead of the artist, as on Home's cards.
+                        if (isLive) LiveBadge(modifier = Modifier.padding(end = 6.dp))
                         Text(
                             text =
                                 (
@@ -364,7 +376,7 @@ fun SongFullWidthItems(
                                 Modifier
                                     .fillMaxWidth()
                                     .wrapContentHeight(align = Alignment.CenterVertically)
-                                    .basicMarquee(
+                                    .titleMarquee(
                                         iterations = Int.MAX_VALUE,
                                         animationMode = MarqueeAnimationMode.Immediately,
                                     ).focusable(),
@@ -448,7 +460,7 @@ fun SuggestItems(
                                 Modifier
                                     .wrapContentHeight()
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(4.dp)),
+                                    .clip(ArtworkShape),
                         )
                     }
                 }
@@ -468,28 +480,31 @@ fun SuggestItems(
                         Modifier
                             .fillMaxWidth()
                             .wrapContentHeight(align = Alignment.CenterVertically)
-                            .basicMarquee(
+                            .titleMarquee(
                                 iterations = Int.MAX_VALUE,
                                 animationMode = MarqueeAnimationMode.Immediately,
                             ).focusable(),
                 )
-                Text(
-                    text =
-                        (
-                            track.artists?.toListName()?.connectArtists()
-                        ) ?: "",
-                    style = typo().bodySmall,
-                    maxLines = 1,
-                    color = subtitleColor,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .wrapContentHeight(align = Alignment.CenterVertically)
-                            .basicMarquee(
-                                iterations = Int.MAX_VALUE,
-                                animationMode = MarqueeAnimationMode.Immediately,
-                            ).focusable(),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (track.isLive) LiveBadge(modifier = Modifier.padding(end = 6.dp))
+                    Text(
+                        text =
+                            (
+                                track.artists?.toListName()?.connectArtists()
+                            ) ?: "",
+                        style = typo().bodySmall,
+                        maxLines = 1,
+                        color = subtitleColor,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight(align = Alignment.CenterVertically)
+                                .titleMarquee(
+                                    iterations = Int.MAX_VALUE,
+                                    animationMode = MarqueeAnimationMode.Immediately,
+                                ).focusable(),
+                    )
+                }
             }
             RippleIconButton(
                 imageVector = SimpIcons.Add,
@@ -502,6 +517,7 @@ fun SuggestItems(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistFullWidthItems(
     data: PlaylistType,
@@ -511,6 +527,34 @@ fun PlaylistFullWidthItems(
     forceDark: Boolean = LocalForceDarkText.current,
 ) {
     val contentColor = if (forceDark) Color.White else MaterialTheme.colorScheme.onSurface
+    // Playlists and radios get Like and Share behind a ⋯, as a song row does; albums, podcasts
+    // and local playlists keep the row as it was. The id is the one the row opens, which is also the
+    // id the playlist page saves under.
+    val menuTarget: PlaylistEntity? =
+        when (data) {
+            is PlaylistEntity -> data
+            is PlaylistsResult ->
+                if (data.resultType == "Podcast") {
+                    null
+                } else {
+                    PlaylistEntity(
+                        id = data.browseId,
+                        title = data.title,
+                        author = data.author,
+                        thumbnails = data.thumbnails.lastOrNull()?.url ?: "",
+                    )
+                }
+            else -> null
+        }
+    var showMenu by remember { mutableStateOf(false) }
+    if (showMenu && menuTarget != null) {
+        PlaylistBottomSheet(
+            onDismiss = { showMenu = false },
+            playlistId = menuTarget.id,
+            playlistName = menuTarget.title,
+            saveAs = menuTarget,
+        )
+    }
     val subtitleColor = if (forceDark) Color(0xC4FFFFFF) else MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         modifier =
@@ -602,7 +646,7 @@ fun PlaylistFullWidthItems(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(4.dp)),
+                            .clip(ArtworkShape),
                 )
             }
             Column(
@@ -620,7 +664,7 @@ fun PlaylistFullWidthItems(
                         Modifier
                             .fillMaxWidth()
                             .wrapContentHeight(align = Alignment.CenterVertically)
-                            .basicMarquee(
+                            .titleMarquee(
                                 iterations = Int.MAX_VALUE,
                                 animationMode = MarqueeAnimationMode.Immediately,
                             ).focusable(),
@@ -647,7 +691,7 @@ fun PlaylistFullWidthItems(
                             Modifier
                                 .fillMaxWidth()
                                 .wrapContentHeight(align = Alignment.CenterVertically)
-                                .basicMarquee(
+                                .titleMarquee(
                                     iterations = Int.MAX_VALUE,
                                     animationMode = MarqueeAnimationMode.Immediately,
                                 ).focusable(),
@@ -664,7 +708,7 @@ fun PlaylistFullWidthItems(
                             Modifier
                                 .fillMaxWidth()
                                 .wrapContentHeight(align = Alignment.CenterVertically)
-                                .basicMarquee(
+                                .titleMarquee(
                                     iterations = Int.MAX_VALUE,
                                     animationMode = MarqueeAnimationMode.Immediately,
                                 ).focusable(),
@@ -673,6 +717,11 @@ fun PlaylistFullWidthItems(
             }
             if (rightView != null) {
                 rightView()
+            }
+            if (menuTarget != null) {
+                RippleIconButton(imageVector = SimpIcons.MoreVert, fillMaxSize = false, tint = contentColor) {
+                    showMenu = true
+                }
             }
         }
     }
@@ -742,7 +791,7 @@ fun ArtistFullWidthItems(
                         Modifier
                             .fillMaxWidth()
                             .wrapContentHeight(align = Alignment.CenterVertically)
-                            .basicMarquee(
+                            .titleMarquee(
                                 iterations = Int.MAX_VALUE,
                                 animationMode = MarqueeAnimationMode.Immediately,
                             ).focusable(),
@@ -757,7 +806,7 @@ fun ArtistFullWidthItems(
                         Modifier
                             .fillMaxWidth()
                             .wrapContentHeight(align = Alignment.CenterVertically)
-                            .basicMarquee(
+                            .titleMarquee(
                                 iterations = Int.MAX_VALUE,
                                 animationMode = MarqueeAnimationMode.Immediately,
                             ).focusable(),

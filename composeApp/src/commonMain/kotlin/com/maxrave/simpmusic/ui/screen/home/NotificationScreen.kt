@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +28,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -62,28 +60,30 @@ import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.maxrave.domain.data.entities.NotificationEntity
+import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
+import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.extension.barBlurStyle
 import com.maxrave.simpmusic.extension.formatTimeAgo
+import com.maxrave.simpmusic.extension.mouseDragScroll
+import com.maxrave.simpmusic.extension.titleMarquee
 import com.maxrave.simpmusic.ui.component.AmbientThemeGlow
 import com.maxrave.simpmusic.ui.component.CenterLoadingBox
 import com.maxrave.simpmusic.ui.component.EndOfPage
 import com.maxrave.simpmusic.ui.component.RippleIconButton
 import com.maxrave.simpmusic.ui.component.rememberHolderPainter
-import com.maxrave.simpmusic.ui.component.rememberNowPlayingGlowTint
 import com.maxrave.simpmusic.ui.icon.ArrowBackIosNew
 import com.maxrave.simpmusic.ui.icon.RssFeed
 import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.navigation.destination.list.AlbumDestination
 import com.maxrave.simpmusic.ui.navigation.destination.list.ArtistDestination
+import com.maxrave.simpmusic.ui.theme.ArtworkShape
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.NotificationViewModel
-import com.maxrave.simpmusic.viewModel.SharedViewModel
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.album
@@ -97,10 +97,8 @@ import simpmusic.composeapp.generated.resources.singles
 fun NotificationScreen(
     navController: NavController,
     viewModel: NotificationViewModel = koinViewModel(),
-    sharedViewModel: SharedViewModel = koinInject(),
 ) {
     val listNotification by viewModel.listNotification.collectAsStateWithLifecycle()
-    val glowNowPlaying by sharedViewModel.nowPlayingState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val density = LocalDensity.current
     val hazeState = rememberHazeState()
@@ -111,9 +109,9 @@ fun NotificationScreen(
     }
 
     // Home-family ambient ground — scrolls away with the list (see SettingScreen's note on the
-    // draw-phase translation).
+    // draw-phase translation). Tinted with the app's primary, as Settings is.
     AmbientThemeGlow(
-        tint = rememberNowPlayingGlowTint(glowNowPlaying?.songEntity?.thumbnails),
+        tint = MaterialTheme.colorScheme.primary,
         modifier =
             Modifier.graphicsLayer {
                 translationY =
@@ -156,6 +154,10 @@ fun NotificationScreen(
                         EndOfPage()
                     }
                 }
+                VerticalScrollBar(
+                    scrollState = listState,
+                    modifier = Modifier.padding(top = topAppBarHeight, bottom = DesktopMiniPlayerClearance),
+                )
             } else {
                 Box(
                     Modifier.fillMaxSize(),
@@ -274,8 +276,10 @@ fun NotificationItem(
                     Text(text = notification.name, style = typo().headlineMedium)
                 }
             }
+            val singlesRowState = rememberLazyListState()
             LazyRow(
-                Modifier.padding(top = 15.dp),
+                Modifier.padding(top = 15.dp).mouseDragScroll(singlesRowState),
+                state = singlesRowState,
             ) {
                 items(notification.single) { single ->
                     ItemAlbumNotification(
@@ -409,7 +413,7 @@ fun ItemAlbumNotification(
                         .align(Alignment.CenterHorizontally)
                         .size(150.dp)
                         .clip(
-                            RoundedCornerShape(10),
+                            ArtworkShape,
                         ),
             )
             Text(
@@ -422,7 +426,7 @@ fun ItemAlbumNotification(
                         .width(150.dp)
                         .wrapContentHeight(align = Alignment.CenterVertically)
                         .padding(top = 10.dp)
-                        .basicMarquee(
+                        .titleMarquee(
                             iterations = Int.MAX_VALUE,
                             animationMode = MarqueeAnimationMode.Immediately,
                         ).focusable(),
@@ -436,7 +440,7 @@ fun ItemAlbumNotification(
                         .width(150.dp)
                         .wrapContentHeight(align = Alignment.CenterVertically)
                         .padding(top = 10.dp)
-                        .basicMarquee(
+                        .titleMarquee(
                             iterations = Int.MAX_VALUE,
                             animationMode = MarqueeAnimationMode.Immediately,
                         ).focusable(),

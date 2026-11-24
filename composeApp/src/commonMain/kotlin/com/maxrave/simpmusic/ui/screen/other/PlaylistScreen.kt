@@ -9,7 +9,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -85,7 +84,10 @@ import coil3.request.crossfade
 import coil3.toBitmap
 import com.kyant.backdrop.highlight.Highlight
 import com.kmpalette.rememberPaletteState
+import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
+import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.extension.barBlurStyle
+import com.maxrave.simpmusic.extension.titleMarquee
 import com.maxrave.simpmusic.ui.component.DownloadingIndicator
 import com.maxrave.domain.data.entities.DownloadState
 import com.maxrave.domain.data.model.browse.album.Track
@@ -101,7 +103,7 @@ import com.maxrave.simpmusic.extension.artworkScrimBrush
 import com.maxrave.simpmusic.extension.getColorFromPalette
 import com.maxrave.simpmusic.extension.getScreenSizeInfo
 import com.maxrave.simpmusic.extension.getStringBlocking
-import com.maxrave.simpmusic.extension.toImmersiveBackground
+import com.maxrave.simpmusic.extension.rememberPaletteColor
 import com.maxrave.simpmusic.ui.component.AddToPlaylistModalBottomSheet
 import com.maxrave.simpmusic.ui.component.CenterLoadingBox
 import com.maxrave.simpmusic.ui.component.DescriptionView
@@ -127,6 +129,7 @@ import com.maxrave.simpmusic.ui.icon.Search
 import com.maxrave.simpmusic.ui.icon.Shuffle
 import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.navigation.destination.list.ArtistDestination
+import com.maxrave.simpmusic.ui.theme.ArtworkShape
 import com.maxrave.simpmusic.ui.theme.LocalIsDarkTheme
 import com.maxrave.simpmusic.ui.theme.seed
 import com.maxrave.simpmusic.ui.theme.typo
@@ -340,8 +343,8 @@ fun PlaylistScreen(
     val screenInfo = getScreenSizeInfo()
     val isPortrait = screenInfo.wDP < screenInfo.hDP
     val dominantColor = listColors.firstOrNull() ?: Color.Black
-    // Apple Music-style page background from the artwork's dominant tone (see UIExt.toImmersiveBackground).
-    val mutedPaletteBg = paletteState.palette.toImmersiveBackground()
+    // Apple Music-style page background from the artwork's dominant tone, held and faded (see UIExt.rememberPaletteColor).
+    val mutedPaletteBg = rememberPaletteColor(paletteState.palette)
 
     // Loading dialog
     val showLoadingDialog by viewModel.showLoadingDialog.collectAsStateWithLifecycle()
@@ -410,7 +413,7 @@ fun PlaylistScreen(
                                                                 .memoryCachePolicy(CachePolicy.ENABLED)
                                                                 .diskCacheKey(data.thumbnail)
                                                                 .memoryCacheKey(data.thumbnail)
-                                                                .crossfade(false)
+                                                                .crossfade(550)
                                                                 .build(),
                                                         placeholder = rememberHolderPainter(),
                                                         error = rememberHolderPainter(),
@@ -519,19 +522,18 @@ fun PlaylistScreen(
                                                                 .liquidGlass(artworkBackdrop, RoundedCornerShape(24.dp)),
                                                         verticalAlignment = Alignment.CenterVertically,
                                                     ) {
-                                                        if (!data.isRadio) {
-                                                            Box(
-                                                                modifier = Modifier.size(48.dp),
-                                                                contentAlignment = Alignment.Center,
-                                                            ) {
-                                                                HeartCheckBox(
-                                                                    size = 28,
-                                                                    checked = liked,
-                                                                    onStateChange = {
-                                                                        viewModel.onUIEvent(PlaylistUIEvent.Favorite)
-                                                                    },
-                                                                )
-                                                            }
+                                                        // Radios too: saving one keeps its id, title and artwork, and it opens rebuilt.
+                                                        Box(
+                                                            modifier = Modifier.size(48.dp),
+                                                            contentAlignment = Alignment.Center,
+                                                        ) {
+                                                            HeartCheckBox(
+                                                                size = 28,
+                                                                checked = liked,
+                                                                onStateChange = {
+                                                                    viewModel.onUIEvent(PlaylistUIEvent.Favorite)
+                                                                },
+                                                            )
                                                         }
                                                         IconButton(
                                                             onClick = {
@@ -588,7 +590,7 @@ fun PlaylistScreen(
                                                                     .memoryCachePolicy(CachePolicy.ENABLED)
                                                                     .diskCacheKey(data.thumbnail)
                                                                     .memoryCacheKey(data.thumbnail)
-                                                                    .crossfade(false)
+                                                                    .crossfade(550)
                                                                     .build(),
                                                             placeholder = rememberHolderPainter(),
                                                             error = rememberHolderPainter(),
@@ -600,7 +602,7 @@ fun PlaylistScreen(
                                                             modifier =
                                                                 Modifier
                                                                     .size(280.dp)
-                                                                    .clip(RoundedCornerShape(8.dp)),
+                                                                    .clip(ArtworkShape),
                                                         )
                                                         Column(
                                                             modifier = Modifier.weight(1f),
@@ -816,19 +818,17 @@ fun PlaylistScreen(
                                                             .liquidGlass(headerBackdrop, RoundedCornerShape(24.dp)),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                 ) {
-                                                    if (!data.isRadio) {
-                                                        Box(
-                                                            modifier = Modifier.size(48.dp),
-                                                            contentAlignment = Alignment.Center,
-                                                        ) {
-                                                            HeartCheckBox(
-                                                                size = 28,
-                                                                checked = liked,
-                                                                onStateChange = {
-                                                                    viewModel.onUIEvent(PlaylistUIEvent.Favorite)
-                                                                },
-                                                            )
-                                                        }
+                                                    Box(
+                                                        modifier = Modifier.size(48.dp),
+                                                        contentAlignment = Alignment.Center,
+                                                    ) {
+                                                        HeartCheckBox(
+                                                            size = 28,
+                                                            checked = liked,
+                                                            onStateChange = {
+                                                                viewModel.onUIEvent(PlaylistUIEvent.Favorite)
+                                                            },
+                                                        )
                                                     }
                                                     IconButton(
                                                         onClick = {
@@ -1163,6 +1163,10 @@ fun PlaylistScreen(
                         }
                     }
                 }
+                VerticalScrollBar(
+                    scrollState = lazyState,
+                    modifier = Modifier.padding(bottom = DesktopMiniPlayerClearance),
+                )
 
                 AnimatedVisibility(
                     visible = showSearchBar,
@@ -1341,7 +1345,7 @@ fun PlaylistScreen(
                                         .fillMaxWidth()
                                         .wrapContentHeight(
                                             align = Alignment.CenterVertically,
-                                        ).basicMarquee(
+                                        ).titleMarquee(
                                             iterations = Int.MAX_VALUE,
                                             animationMode = MarqueeAnimationMode.Immediately,
                                         ).focusable(),
