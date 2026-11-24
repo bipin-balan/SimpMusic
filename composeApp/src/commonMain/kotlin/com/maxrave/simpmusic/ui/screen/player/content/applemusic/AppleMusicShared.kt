@@ -40,7 +40,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -80,18 +79,23 @@ import com.maxrave.domain.mediaservice.handler.RepeatState
 import com.maxrave.domain.repository.ListenTogetherRepository
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.DeviceVolumeController
+
 import com.maxrave.simpmusic.expect.ui.PlatformCastButton
 import com.maxrave.simpmusic.expect.ui.PlatformRemoteDeviceButton
 import com.maxrave.simpmusic.expect.ui.isPlatformCastAvailable
 import com.maxrave.simpmusic.expect.ui.isPlatformRemoteDeviceAvailable
+import com.maxrave.simpmusic.extension.LeftToRight
 import com.maxrave.simpmusic.extension.formatDuration
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.ui.component.ExplicitBadge
+import com.maxrave.simpmusic.ui.component.ValueSlider
 import com.maxrave.simpmusic.ui.component.heartBurst
 import com.maxrave.simpmusic.ui.component.rememberHeartBurstState
 import com.maxrave.simpmusic.ui.component.rememberHolderPainter
 import com.maxrave.simpmusic.ui.icon.AddCircleOutline
+import com.maxrave.simpmusic.ui.icon.ArrowBackIosNew
 import com.maxrave.simpmusic.ui.icon.CheckCircle
+import com.maxrave.simpmusic.ui.icon.CommentOutline
 import com.maxrave.simpmusic.ui.icon.FastForward
 import com.maxrave.simpmusic.ui.icon.FastRewind
 import com.maxrave.simpmusic.ui.icon.Groups
@@ -111,6 +115,7 @@ import com.maxrave.simpmusic.ui.icon.VolumeDown
 import com.maxrave.simpmusic.ui.icon.VolumeUp
 import com.maxrave.simpmusic.ui.screen.player.content.NowPlayingContentActions
 import com.maxrave.simpmusic.ui.screen.player.content.NowPlayingContentState
+import com.maxrave.simpmusic.ui.theme.ArtworkShape
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.UIEvent
 import org.jetbrains.compose.resources.stringResource
@@ -147,8 +152,7 @@ internal fun appleMusicGradientColorAt(
 
 internal val AppleMusicTextSecondary = Color.White.copy(alpha = 0.72f)
 
-// Artist, times and captions — BitChord's value for the same lines (PlayerControls.kt,
-// NowPlayingScreen.kt).
+// Artist, times and captions.
 internal val AppleMusicSecondaryText = Color.White.copy(alpha = 0.55f)
 internal val AppleMusicPillInactive = Color.White.copy(alpha = 0.24f)
 internal val AppleMusicTrackInactive = Color.White.copy(alpha = 0.26f)
@@ -176,7 +180,7 @@ internal data class AppleMusicTypography(
  * in-player line (headlineMedium), SongFullWidthItems rows (titleSmall/bodySmall), the queue
  * sheet's section headers (titleMedium) and M3E's canvas overlay lines (bodyMedium white/yellow).
  *
- * Secondary text is BitChord's translucent white rather than typo()'s body grey: an opaque
+ * Secondary text is a translucent white rather than typo()'s body grey: an opaque
  * #A8A8A8 is darker than a bright sleeve's page and read as a dark grey smudge on it, where a
  * translucent white stays lighter than whatever it sits on.
  */
@@ -388,11 +392,12 @@ internal fun AppleMusicHeaderActions(
             contentAlignment = Alignment.Center,
         ) {
             Crossfade(targetState = state.controllerState.isLiked, label = "appleMusicFavorite") { liked ->
+                // 24dp like ⊕ and ⋮ beside it; the 32dp box stays, since the burst's reach scales with it.
                 Icon(
                     imageVector = if (liked) SimpIcons.Star else SimpIcons.StarBorder,
                     contentDescription = "",
                     tint = Color.White,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
         }
@@ -410,11 +415,19 @@ internal fun AppleMusicCompactHeader(
     actions: NowPlayingContentActions,
     typography: AppleMusicTypography,
     modifier: Modifier = Modifier,
+    // A back button ahead of the artwork; only the SoundCloud style passes one, to leave its
+    // borrowed Lyrics page for its card.
+    onBack: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (onBack != null) {
+            // On the circle the page's floating buttons sit on.
+            AppleMusicFloatingCircleButton(icon = SimpIcons.ArrowBackIosNew, onClick = onBack)
+            Spacer(modifier = Modifier.width(12.dp))
+        }
         AsyncImage(
             model =
                 ImageRequest
@@ -427,7 +440,7 @@ internal fun AppleMusicCompactHeader(
             placeholder = rememberHolderPainter(),
             error = rememberHolderPainter(),
             contentDescription = null,
-            modifier = Modifier.size(55.dp).clip(RoundedCornerShape(4.dp)),
+            modifier = Modifier.size(55.dp).clip(ArtworkShape),
         )
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -455,7 +468,12 @@ internal fun AppleMusicCompactHeader(
             }
         }
         Spacer(modifier = Modifier.width(12.dp))
-        AppleMusicHeaderActions(state = state, actions = actions)
+        if (onBack != null) {
+            // The SoundCloud style keeps like and add-to-liked on its card, so only more stays here.
+            AppleMusicGlyphButton(icon = SimpIcons.MoreVert, onClick = { actions.onShowMoreSheet() })
+        } else {
+            AppleMusicHeaderActions(state = state, actions = actions)
+        }
     }
 }
 
@@ -481,7 +499,7 @@ internal fun AppleMusicThinSlider(
         label = "appleMusicSliderInflate",
     )
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
-        Slider(
+        ValueSlider(
             value = value,
             onValueChange = onValueChange,
             onValueChangeFinished = onValueChangeFinished,
@@ -631,7 +649,7 @@ internal fun AppleMusicTimesRow(
                     textAlign = TextAlign.Center,
                 )
             }
-            // BitChord's quality line: a small headphones glyph ahead of the stream's own figures,
+            // The quality line: a small headphones glyph ahead of the stream's own figures,
             // bare on the page and dimmer than the times either side of it. The figures change
             // with the track and so crossfade in with it rather than snapping.
             Crossfade(
@@ -662,7 +680,7 @@ internal fun AppleMusicTimesRow(
     }
 }
 
-// The quality line sits a step below the times either side of it, as BitChord's does.
+// The quality line sits a step below the times either side of it.
 private val AppleMusicQualityLabel = Color.White.copy(alpha = 0.45f)
 
 /** FastRewind(44dp) → Previous, Play/Pause(62dp, plain white — no container disc), FastForward(44dp) → Next. */
@@ -755,7 +773,7 @@ internal fun AppleMusicTransportRow(
 internal fun AppleMusicVolumeRow(
     controller: DeviceVolumeController,
     modifier: Modifier = Modifier,
-) {
+) = LeftToRight {
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Icon(
             imageVector = SimpIcons.VolumeDown,
@@ -818,10 +836,10 @@ internal fun AppleMusicDockButton(
 }
 
 /**
- * Lyrics · [Output | Listen Together] · Queue — BitChord's arrangement. The capsule holds the two
+ * Lyrics · [Output | Listen Together | Comments] · Queue. The capsule holds the two
  * answers to "where is this playing": which speaker (the output sheet, which is also where Cast
- * lives now) and which people (Listen Together). Joined by a hairline rather than a gap, so the
- * two read as one object.
+ * lives now) and which people (Listen Together), with the comments sheet at its right end. Joined
+ * by hairlines rather than gaps, so the segments read as one object.
  */
 @Composable
 internal fun AppleMusicActionRow(
@@ -832,16 +850,22 @@ internal fun AppleMusicActionRow(
     activeContentColor: Color,
     onOpenOutput: () -> Unit,
     onOpenListenTogether: () -> Unit,
+    onOpenComments: () -> Unit,
     modifier: Modifier = Modifier,
-) {
+) = LeftToRight {
     // Straight off the repository, like ListenTogetherIconButton: one boolean off a StateFlow is all
     // the capsule needs, and a ViewModel for it would be built every time the player opens.
     val listenTogether = koinInject<ListenTogetherRepository>()
     val room by listenTogether.room.collectAsStateWithLifecycle()
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        // A quarter of the spare width at each end, the rest between — BitChord's spacing. SpaceEvenly
+        // At full width the row is 274dp, more than the landscape side panel holds on a narrow
+        // tablet or Desktop window. There the segments give up width first, keeping 16dp spare, down
+        // to 36dp (the glyph still clear of the capsule's rounded ends): the row fits down to 190dp.
+        val segmentWidth =
+            ((maxWidth - DOCK_BUTTON_SIZE * 2 - 2.dp - 16.dp) / 3).coerceIn(36.dp, CAPSULE_SEGMENT_WIDTH)
+        // A quarter of the spare width at each end, the rest between. SpaceEvenly
         // over the full row pushed the two glyphs out to the gutters, away from the capsule.
-        val content = DOCK_BUTTON_SIZE * 2 + CAPSULE_SEGMENT_WIDTH * 2 + 1.dp
+        val content = DOCK_BUTTON_SIZE * 2 + segmentWidth * 3 + 2.dp
         val edgeInset = ((maxWidth - content) / 4).coerceAtLeast(0.dp)
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = edgeInset),
@@ -869,9 +893,7 @@ internal fun AppleMusicActionRow(
             ) {
                 AppleMusicCapsuleSegment(
                     icon = SimpIcons.Headphones,
-                    // Headphones is a tall, narrow glyph and Groups a wide one; these are the sizes at
-                    // which the two read as a matched pair rather than one looking bigger.
-                    iconSize = 23.dp,
+                    width = segmentWidth,
                     highlighted = false,
                     onClick = onOpenOutput,
                 )
@@ -884,9 +906,22 @@ internal fun AppleMusicActionRow(
                 )
                 AppleMusicCapsuleSegment(
                     icon = SimpIcons.Groups,
-                    iconSize = 24.dp,
+                    width = segmentWidth,
                     highlighted = room.inRoom,
                     onClick = onOpenListenTogether,
+                )
+                Box(
+                    modifier =
+                        Modifier
+                            .width(1.dp)
+                            .fillMaxHeight()
+                            .background(Color.White.copy(alpha = 0.20f)),
+                )
+                AppleMusicCapsuleSegment(
+                    icon = SimpIcons.CommentOutline,
+                    width = segmentWidth,
+                    highlighted = false,
+                    onClick = onOpenComments,
                 )
             }
             AppleMusicDockButton(
@@ -911,7 +946,7 @@ internal fun AppleMusicActionRow(
 @Composable
 private fun AppleMusicCapsuleSegment(
     icon: ImageVector,
-    iconSize: Dp,
+    width: Dp,
     highlighted: Boolean,
     onClick: () -> Unit,
 ) {
@@ -930,7 +965,7 @@ private fun AppleMusicCapsuleSegment(
     Box(
         modifier =
             Modifier
-                .width(CAPSULE_SEGMENT_WIDTH)
+                .width(width)
                 .fillMaxHeight()
                 .background(background)
                 .clickable(interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick),
@@ -940,6 +975,8 @@ private fun AppleMusicCapsuleSegment(
             imageVector = icon,
             contentDescription = null,
             tint = if (highlighted) Color.White else Color.White.copy(alpha = 0.85f),
+            // 22dp like the dock buttons either side: Material Symbols are drawn to balance at one
+            // size, so every glyph in this row takes the same one.
             modifier =
                 Modifier
                     .graphicsLayer {
@@ -963,6 +1000,7 @@ private fun AppleMusicCapsuleSegment(
             onClick = {
                 onSelectView(if (viewState == AppleMusicView.QUEUE) AppleMusicView.MAIN else AppleMusicView.QUEUE)
             },
+                    }.size(22.dp),
         )
     }
 }
@@ -981,7 +1019,7 @@ internal fun ColumnScope.AppleMusicPlaybackControls(
     actions: NowPlayingContentActions,
     typography: AppleMusicTypography,
     showShuffleAndRepeat: Boolean = false,
-) {
+) = LeftToRight {
     // Fixed 18dp shell: the track swells on touch, but inside a CONSTANT footprint —
     // otherwise the growing slider re-measures this whole column and the artwork above
     // it visibly jumps. It also gives the bar a real 18dp touch target instead of 8.4dp.
@@ -1047,10 +1085,11 @@ internal fun AppleMusicBottomCluster(
             activeContentColor = activePillContent,
             onOpenOutput = onOpenOutput,
             onOpenListenTogether = actions.onOpenListenTogether,
+            onOpenComments = actions.onShowComments,
         )
         Spacer(modifier = Modifier.height(14.dp))
         // Crossfaded, since it changes on its own — a headset connecting renames the line under the
-        // user's thumb. Tappable like BitChord's: it names the output, so it opens the output sheet.
+        // user's thumb. Tappable: it names the output, so it opens the output sheet.
         Crossfade(
             targetState = outputName.orEmpty(),
             animationSpec = tween(300),

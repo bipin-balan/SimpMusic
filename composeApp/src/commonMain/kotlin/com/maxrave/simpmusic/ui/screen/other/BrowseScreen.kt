@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,10 +57,13 @@ import com.maxrave.domain.data.model.home.Content
 import com.maxrave.domain.utils.toSongEntity
 import com.maxrave.domain.utils.toTrack
 import com.maxrave.simpmusic.Platform
+import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
+import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.extension.angledGradientBackground
 import com.maxrave.simpmusic.extension.artworkScrimBrush
 import com.maxrave.simpmusic.extension.barBlurStyle
 import com.maxrave.simpmusic.extension.rgbFactor
+import com.maxrave.simpmusic.extension.titleMarquee
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.ui.component.AmbientGlowHeight
 import com.maxrave.simpmusic.ui.component.CenterLoadingBox
@@ -267,6 +269,10 @@ fun BrowseScreen(
                                     EndOfPage()
                                 }
                             }
+                            VerticalScrollBar(
+                                scrollState = listState,
+                                modifier = Modifier.padding(top = innerPadding.calculateTopPadding() + 64.dp, bottom = DesktopMiniPlayerClearance),
+                            )
                         }
                     }
 
@@ -315,7 +321,7 @@ fun BrowseScreen(
                                     .fillMaxWidth()
                                     .wrapContentHeight(
                                         align = Alignment.CenterVertically,
-                                    ).basicMarquee(
+                                    ).titleMarquee(
                                         iterations = Int.MAX_VALUE,
                                         animationMode = MarqueeAnimationMode.Immediately,
                                     ).focusable(),
@@ -328,6 +334,7 @@ fun BrowseScreen(
                                 Modifier
                                     .size(32.dp),
                                 true,
+                                tint = MaterialTheme.colorScheme.onSurface,
                             ) {
                                 navController.navigateUp()
                             }

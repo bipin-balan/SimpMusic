@@ -2,7 +2,6 @@ package com.maxrave.simpmusic.ui.screen.other
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.MarqueeAnimationMode
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,7 +16,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -31,6 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.maxrave.logger.Logger
+import com.maxrave.simpmusic.expect.ui.DesktopMiniPlayerClearance
+import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
+import com.maxrave.simpmusic.extension.titleMarquee
+import com.maxrave.simpmusic.extension.ultraThinBarStyle
 import com.maxrave.simpmusic.ui.component.CenterLoadingBox
 import com.maxrave.simpmusic.ui.component.EndOfPage
 import com.maxrave.simpmusic.ui.component.HomeItemContentPlaylist
@@ -44,7 +49,6 @@ import com.maxrave.simpmusic.viewModel.MoreAlbumsUIState
 import com.maxrave.simpmusic.viewModel.MoreAlbumsViewModel
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.blur.hazeBlur
-import dev.chrisbanes.haze.blur.materials.HazeMaterials
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import org.koin.compose.viewmodel.koinViewModel
@@ -83,7 +87,9 @@ fun MoreAlbumsScreen(
         when (state) {
             is MoreAlbumsUIState.Success -> {
                 val data = state.albumItems
+                val gridState = rememberLazyGridState()
                 LazyVerticalGrid(
+                    state = gridState,
                     // As many columns as fit, not a fixed two: HomeItemContentPlaylist is a fixed
                     // 180dp wide, so two columns on a wide window left each tile alone in a huge cell.
                     // 170dp rather than 180 keeps two columns on a 360dp phone (2 × 170 + the 10dp
@@ -125,10 +131,14 @@ fun MoreAlbumsScreen(
                         EndOfPage()
                     }
                 }
+                VerticalScrollBar(
+                    scrollState = gridState,
+                    modifier = Modifier.padding(top = innerPadding.calculateTopPadding() + 64.dp, bottom = DesktopMiniPlayerClearance),
+                )
                 TopAppBar(
                     modifier =
                         Modifier
-                            .hazeBlur(HazeInput.Sources(hazeState), HazeMaterials.ultraThin().then { blurEnabled(true) }),
+                            .hazeBlur(HazeInput.Sources(hazeState), ultraThinBarStyle()),
                     title = {
                         Text(
                             text = state.title,
@@ -139,7 +149,7 @@ fun MoreAlbumsScreen(
                                     .fillMaxWidth()
                                     .wrapContentHeight(
                                         align = Alignment.CenterVertically,
-                                    ).basicMarquee(
+                                    ).titleMarquee(
                                         iterations = Int.MAX_VALUE,
                                         animationMode = MarqueeAnimationMode.Immediately,
                                     ).focusable(),
@@ -152,6 +162,7 @@ fun MoreAlbumsScreen(
                                 Modifier
                                     .size(32.dp),
                                 true,
+                                tint = MaterialTheme.colorScheme.onSurface,
                             ) {
                                 navController.navigateUp()
                             }

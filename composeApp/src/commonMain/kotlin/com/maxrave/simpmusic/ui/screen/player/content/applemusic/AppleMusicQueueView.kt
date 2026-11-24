@@ -57,8 +57,8 @@ import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
 import com.maxrave.domain.mediaservice.handler.QueueData
 import com.maxrave.domain.mediaservice.handler.RepeatState
 import com.maxrave.simpmusic.expect.ui.DeviceVolumeController
+import com.maxrave.simpmusic.expect.ui.VerticalScrollBar
 import com.maxrave.simpmusic.ui.component.DraggableItem
-import com.maxrave.simpmusic.ui.component.QueueItemBottomSheet
 import com.maxrave.simpmusic.ui.component.SongFullWidthItems
 import com.maxrave.simpmusic.ui.component.rememberDragDropState
 import com.maxrave.simpmusic.ui.icon.Info
@@ -79,12 +79,13 @@ import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.continue_playing
 import simpmusic.composeapp.generated.resources.endless_queue
 import simpmusic.composeapp.generated.resources.now_playing
+import simpmusic.composeapp.generated.resources.radio_mix
 
 /**
  * The QUEUE body: compact header, [Info][PlaylistAdd][Shuffle][Repeat] pills, a "Continue
  * Playing" section (with the endless-queue switch) and the upcoming tracks — the OLD queue
  * sheet's own [SongFullWidthItems] rows with its long-press-drag reorder and its per-item ⋯
- * sheet ([QueueItemBottomSheet]: move up/down/delete), matching
+ * sheet (the full song sheet plus move up/down/to play next and delete), matching
  * [com.maxrave.simpmusic.ui.component.QueueBottomSheet] exactly.
  * Ends in the same fixed bottom cluster as MAIN/LYRICS.
  */
@@ -208,17 +209,6 @@ internal fun AppleMusicQueueView(
         }
         var overscrollJob by remember { mutableStateOf<Job?>(null) }
 
-        // Same per-item sheet the old queue sheet opens from a row's ⋯ (move up/down/delete).
-        var queueItemSheetIndex by remember { mutableStateOf(-1) }
-        var queueItemSheetVideoId by remember { mutableStateOf<String?>(null) }
-        if (queueItemSheetIndex >= 0) {
-            QueueItemBottomSheet(
-                onDismiss = { queueItemSheetIndex = -1 },
-                index = queueItemSheetIndex,
-                videoId = queueItemSheetVideoId,
-            )
-        }
-
         Box(
             modifier =
                 Modifier
@@ -285,7 +275,7 @@ internal fun AppleMusicQueueView(
                     ) { _ ->
                         // Owner's call: the OLD queue sheet's row component, verbatim — no bespoke
                         // row. Long-press-drag reorders (list-level gesture above); ⋯ opens the
-                        // same per-item sheet the queue sheet uses.
+                        // full song sheet with the queue's own rows, hosted by the player screen.
                         SongFullWidthItems(
                             track = track,
                             isPlaying = false,
@@ -294,13 +284,16 @@ internal fun AppleMusicQueueView(
                                 if (videoId == track.videoId) actions.onSeekToQueueIndex(queueIndex)
                             },
                             onMoreClickListener = {
-                                queueItemSheetVideoId = track.videoId
-                                queueItemSheetIndex = queueIndex
+                                actions.onQueueItemMore(queueIndex, track)
                             },
                         )
                     }
                 }
             }
+            VerticalScrollBar(
+                scrollState = lazyListState,
+                modifier = Modifier.padding(top = QUEUE_TOP_FADE, bottom = QUEUE_BOTTOM_FADE),
+            )
         }
 
         AppleMusicBottomCluster(
@@ -422,7 +415,7 @@ private fun AppleMusicContinuePlayingHeader(
             // printing an empty one.
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(Res.string.now_playing),
+                    text = stringResource(if (state.screenData.isRadioQueue) Res.string.radio_mix else Res.string.now_playing),
                     style = typography.queueSectionSubtitle,
                 )
                 val source = state.screenData.playlistName
