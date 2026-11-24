@@ -79,7 +79,6 @@ import com.maxrave.domain.mediaservice.handler.RepeatState
 import com.maxrave.domain.repository.ListenTogetherRepository
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.DeviceVolumeController
-
 import com.maxrave.simpmusic.expect.ui.PlatformCastButton
 import com.maxrave.simpmusic.expect.ui.PlatformRemoteDeviceButton
 import com.maxrave.simpmusic.expect.ui.isPlatformCastAvailable
