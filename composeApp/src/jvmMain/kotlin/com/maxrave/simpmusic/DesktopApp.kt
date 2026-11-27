@@ -174,20 +174,29 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
     // (wordbyword://lastfm-auth?token=…): the OS launched us with the token, this filter
     // discarded it, and the app merely came to the foreground while the login sat there
     // waiting forever. Any scheme we register with the OS must survive this line.
-    val deepLinkArg = args.firstOrNull()?.takeIf { DEEP_LINK_ARG.matches(it) }
+    val deepLinkArg =
+        args
+            .asSequence()
+            .map { it.trim().trim('"') }
+            .firstOrNull { DEEP_LINK_ARG.matches(it) }
     // Single-instance guard — MUST run before startKoin. The DataStore Koin
     // singleton is `createdAtStart`, so a second Windows instance would touch
     // ~/.simpmusic/settings.preferences_pb and crash with an "Unable to rename
     // ...tmp" IOException (#2044) before it ever reached the old in-Compose check.
     // Bail out here, before Koin/DataStore initialize.
+    //
+    // A second instance forwards its deep link inside the restore request itself: the library
+    // writes it before the request appears, so the running instance never looks too early (#2894).
     val isSingleInstance =
         SingleInstanceManager.isSingleInstance(
-            onRestoreRequest = { DesktopRestoreSignal.request() },
+            onRestoreFileCreated = { deepLinkArg?.let { DesktopDeepLinkHandler.writePendingUri(this, it) } },
+            onRestoreRequest = {
+                DesktopDeepLinkHandler.readPendingUri(this)
+                DesktopRestoreSignal.request()
+            },
         )
     if (!isSingleInstance) {
-        // Second instance: forward the deep link (if any) to the running instance,
-        // then exit. Nothing has touched the DataStore file yet.
-        deepLinkArg?.let { DesktopDeepLinkHandler.writePendingUri(it) }
+        // Second instance: the link is already on its way. Exit before Koin touches the DataStore file.
         return
     }
     // Past the guard on purpose: a second instance must not open the same log files.
@@ -302,6 +311,9 @@ fun runDesktopApp(args: Array<String> = emptyArray()) {
         // second instance launches: bring the window back to the foreground and
         // consume any deep link the second instance forwarded.
         LaunchedEffect(Unit) {
+            // A restore request that arrived before this collector existed was dropped by the
+            // flow, but its deep link was kept: deliver it now.
+            DesktopDeepLinkHandler.consumePendingUri()
             DesktopRestoreSignal.requests.collect {
                 isVisible = true
                 windowState.isMinimized = false
