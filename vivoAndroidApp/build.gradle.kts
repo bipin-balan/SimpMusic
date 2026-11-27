@@ -14,6 +14,14 @@ val isFullBuild: Boolean =
         false
     }
 
+// Mirrors androidApp: the official-build check is off in this fork unless -PofficialBuildCheck=true.
+val officialBuildCheck: Boolean =
+    try {
+        extra["officialBuildCheck"] == "true"
+    } catch (e: Exception) {
+        false
+    }
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.sentry.gradle)
@@ -79,6 +87,8 @@ android {
         }
 
         // vivo phones with Origin Island are all arm64, so one APK and no ABI splits.
+        buildConfigField("boolean", "OFFICIAL_BUILD_CHECK", officialBuildCheck.toString())
+
         ndk {
             abiFilters.add("arm64-v8a")
         }

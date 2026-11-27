@@ -789,6 +789,7 @@
     <string name="audio_output">Audio output</string>
     <string name="audio_output_playing_here">Playing here</string>
     <string name="audio_output_cast">Cast</string>
+    <string name="audio_output_network">Network speakers (HEOS / DLNA)</string>
     <string name="audio_output_system_default">System default</string>
     <string name="audio_output_wired">Wired headphones</string>
     <string name="audio_output_bluetooth">Bluetooth</string>

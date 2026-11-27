@@ -270,7 +270,8 @@ class MainActivity : AppCompatActivity() {
         }
         viewModel.getLocation()
 
-        if (!BuildConfig.DEBUG) viewModel.checkOfficialBuild(packageName, signingCertSha256())
+        // OFFICIAL_BUILD_CHECK is off in this fork (self-signed APKs); see androidApp/build.gradle.kts.
+        if (!BuildConfig.DEBUG && BuildConfig.OFFICIAL_BUILD_CHECK) viewModel.checkOfficialBuild(packageName, signingCertSha256())
         setContent {
             App(viewModel)
         }

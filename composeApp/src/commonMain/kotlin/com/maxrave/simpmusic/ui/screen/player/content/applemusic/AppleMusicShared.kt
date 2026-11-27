@@ -80,9 +80,7 @@ import com.maxrave.domain.repository.ListenTogetherRepository
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.DeviceVolumeController
 import com.maxrave.simpmusic.expect.ui.PlatformCastButton
-import com.maxrave.simpmusic.expect.ui.PlatformRemoteDeviceButton
 import com.maxrave.simpmusic.expect.ui.isPlatformCastAvailable
-import com.maxrave.simpmusic.expect.ui.isPlatformRemoteDeviceAvailable
 import com.maxrave.simpmusic.extension.LeftToRight
 import com.maxrave.simpmusic.extension.formatDuration
 import com.maxrave.simpmusic.getPlatform
@@ -981,24 +979,6 @@ private fun AppleMusicCapsuleSegment(
                     .graphicsLayer {
                         scaleX = glyphScale
                         scaleY = glyphScale
-                    }.size(iconSize),
-        // HEOS (Denon / Marantz) device picker.
-        if (isPlatformRemoteDeviceAvailable()) {
-            Box(modifier = Modifier.appleMusicPressInflate().size(40.dp), contentAlignment = Alignment.Center) {
-                PlatformRemoteDeviceButton(
-                    modifier = Modifier.size(22.dp),
-                    tint = if (castState.isRemote) activeColor else Color.White,
-                )
-            }
-        }
-        AppleMusicDockButton(
-            icon = SimpIcons.QueueMusic,
-            active = viewState == AppleMusicView.QUEUE,
-            activeColor = activeColor,
-            activeContentColor = activeContentColor,
-            onClick = {
-                onSelectView(if (viewState == AppleMusicView.QUEUE) AppleMusicView.MAIN else AppleMusicView.QUEUE)
-            },
                     }.size(22.dp),
         )
     }

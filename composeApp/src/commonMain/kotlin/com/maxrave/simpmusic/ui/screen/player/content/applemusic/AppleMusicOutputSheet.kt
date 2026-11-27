@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -45,6 +46,7 @@ import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
 import com.maxrave.simpmusic.Platform
 import com.maxrave.simpmusic.expect.ui.DeviceVolumeController
 import com.maxrave.simpmusic.expect.ui.rememberCastReceivers
+import com.maxrave.simpmusic.expect.ui.rememberRemoteDevices
 import com.maxrave.simpmusic.expect.ui.rememberDeviceVolumeController
 import com.maxrave.simpmusic.getPlatform
 import com.maxrave.simpmusic.ui.component.SheetSurface
@@ -65,6 +67,7 @@ import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.audio_output
 import simpmusic.composeapp.generated.resources.audio_output_bluetooth
 import simpmusic.composeapp.generated.resources.audio_output_cast
+import simpmusic.composeapp.generated.resources.audio_output_network
 import simpmusic.composeapp.generated.resources.audio_output_hdmi
 import simpmusic.composeapp.generated.resources.audio_output_playing_here
 import simpmusic.composeapp.generated.resources.audio_output_system_default
@@ -121,6 +124,8 @@ internal fun AppleMusicOutputSheet(
         val localDensity = LocalDensity.current
         // Scanning for receivers only while this is open: discovery keeps the radio busy.
         val cast = rememberCastReceivers(discover = true)
+        // HEOS / DLNA devices (Denon, Marantz, Samsung, Sony, Sonos …) scan on the same terms.
+        val remote = rememberRemoteDevices(discover = true)
         // Devices coming and going update the list on their own; the system's own route changing does not.
         LaunchedEffect(Unit) { onRefresh() }
 
@@ -160,9 +165,12 @@ internal fun AppleMusicOutputSheet(
                             selected = playingHere,
                             colors = colors,
                             onClick = {
-                                // Coming back from a receiver: end the Cast session first, or the pick
-                                // would route a local player that is not the one playing.
-                                if (castState.isRemote) cast.disconnect()
+                                // Coming back from a receiver: end the Cast / HEOS / DLNA session first, or
+                                // the pick would route a local player that is not the one playing.
+                                if (castState.isRemote) {
+                                    cast.disconnect()
+                                    remote.disconnect()
+                                }
                                 onSelectOutput(output)
                                 closeSheet()
                             },
@@ -188,6 +196,38 @@ internal fun AppleMusicOutputSheet(
                                 selected = receiver.isConnected,
                                 colors = colors,
                                 onClick = { if (!receiver.isConnected) cast.connect(receiver.id) },
+                            )
+                        }
+                    }
+                    if (remote.devices.isNotEmpty() || remote.isSearching) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                            thickness = 1.dp,
+                            color = Color.White.copy(alpha = 0.10f),
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 32.dp, end = 20.dp, top = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.audio_output_network),
+                                style = typo().bodySmall,
+                                color = colors.subtitle,
+                                modifier = Modifier.weight(1f),
+                            )
+                            // A scan lasts a few seconds; the spinner says the empty list is "not yet", not "none".
+                            if (remote.isSearching) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = colors.subtitle)
+                            }
+                        }
+                        remote.devices.forEach { device ->
+                            OutputRow(
+                                icon = SimpIcons.Speaker,
+                                name = device.name,
+                                status = if (device.isConnected) stringResource(Res.string.audio_output_playing_here) else device.protocol,
+                                selected = device.isConnected,
+                                colors = colors,
+                                onClick = { if (!device.isConnected) remote.connect(device.id) },
                             )
                         }
                     }

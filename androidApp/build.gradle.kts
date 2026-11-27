@@ -7,6 +7,16 @@ val isFullBuild: Boolean =
         false
     }
 
+// This fork is signed with its owner's own key, so the upstream official-build check (which
+// compares the APK's signing certificate against F-Droid's key list) would lock it out. Off
+// by default here; pass -PofficialBuildCheck=true to build with the upstream behaviour.
+val officialBuildCheck: Boolean =
+    try {
+        extra["officialBuildCheck"] == "true"
+    } catch (e: Exception) {
+        false
+    }
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.sentry.gradle)
@@ -71,6 +81,7 @@ android {
                 )
         }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "OFFICIAL_BUILD_CHECK", officialBuildCheck.toString())
 
         ndk {
             abiFilters.add("x86_64")

@@ -103,6 +103,42 @@ actual fun PlatformRemoteDeviceButton(
 
 actual fun isPlatformRemoteDeviceAvailable(): Boolean = true
 
+/**
+ * HEOS / DLNA devices for the unified output sheet. Scans while [discover] is true and the
+ * manager is registered (it arrives with the media service); releases the idle HEOS gateway
+ * socket when the list leaves the screen without a device in use.
+ */
+@Composable
+actual fun rememberRemoteDevices(discover: Boolean): RemoteDevices {
+    val koin = getKoin()
+    val manager = remember(koin) { koin.getOrNull<RemoteDeviceManager>() } ?: return NoRemoteDevices
+    val devices by manager.devices.collectAsState()
+    val searching by manager.isSearching.collectAsState()
+    val connected by manager.connectedDevice.collectAsState()
+    DisposableEffect(manager, discover) {
+        if (discover) manager.discover()
+        onDispose { manager.releaseIfIdle() }
+    }
+    return remember(manager, devices, searching, connected) {
+        RemoteDevices(
+            devices =
+                devices.map { device ->
+                    RemoteOutputDevice(
+                        id = device.id,
+                        name = device.name,
+                        protocol = device.kind.label,
+                        isConnected = connected?.id == device.id,
+                    )
+                },
+            isSearching = searching,
+            connect = { id -> devices.firstOrNull { it.id == id }?.let(manager::connect) },
+            disconnect = { manager.disconnect() },
+        )
+    }
+}
+
+private val NoRemoteDevices = RemoteDevices(devices = emptyList(), isSearching = false, connect = {}, disconnect = {})
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HeosDevicePickerSheet(

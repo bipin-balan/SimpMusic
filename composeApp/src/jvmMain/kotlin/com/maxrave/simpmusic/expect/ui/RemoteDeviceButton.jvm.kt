@@ -13,3 +13,9 @@ actual fun PlatformRemoteDeviceButton(
 }
 
 actual fun isPlatformRemoteDeviceAvailable(): Boolean = false
+
+// Desktop has no HEOS/DLNA integration yet, so the list is always empty and the actions do nothing.
+private val NoRemoteDevices = RemoteDevices(devices = emptyList(), isSearching = false, connect = {}, disconnect = {})
+
+@Composable
+actual fun rememberRemoteDevices(discover: Boolean): RemoteDevices = NoRemoteDevices
